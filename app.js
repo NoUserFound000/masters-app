@@ -334,8 +334,13 @@ function cycleSvg(stages) {
     ${stages.some((s) => (s.note || "").length > 14 || String(s.label).length > 10) ? `<div class="tl">${stages.map((s) => `<div><b>${esc(s.label)}</b>${esc(s.note || "")}</div>`).join("")}</div>` : ""}`;
 }
 
+const deepHtml = (c) => { if (!c.deep?.length) return "";
+  const n = c.deep.reduce((a, s) => a + (s.p.join("").match(/[\u4e00-\u9fff]/g) || []).length, 0);
+  return `<details class="deep" open><summary><span class="eyebrow">深入導讀</span><span class="mins">${n.toLocaleString()} 字 · 大約 ${Math.max(1, Math.round(n / 450))} 分鐘</span></summary>
+    ${c.deep.length > 2 ? `<ol class="dtoc">${c.deep.map((s, j) => `<li><a href="#" data-d="${j}">${esc(s.h)}</a></li>`).join("")}</ol>` : ""}
+    ${c.deep.map((s, j) => `<section id="dsec-${j}"><h4>${esc(s.h)}</h4>${s.p.map((x) => `<p>${mdl(x)}</p>`).join("")}</section>`).join("")}</details>`; };
 const sec = (title, inner) => inner ? `<div class="sec"><h3>${title}</h3>${inner}</div>` : "";
-const termsHtml = (c) => c.terms?.length ? `<div class="terms">${c.terms.map((t, j) => `<button class="term" data-j="${j}" aria-expanded="false">${esc(t.term)}</button>`).join("")}</div><div class="termdef" id="tdef" hidden></div>` : "";
+const termsHtml = (c) => c.terms?.length ? `<div class="terms">${c.terms.map((t, j) => `<button class="term" data-j="${j}" aria-expanded="false">${esc(t.term)}${t.en ? `<i class="en">${esc(t.en)}</i>` : ""}</button>`).join("")}</div><div class="termdef" id="tdef" hidden></div>` : "";
 const navHtml = (b, i, d) => `<div class="nav"><button class="btn" id="prev" ${i === 0 ? "disabled" : ""}>← 上一${b.mine ? "課" : "章"}</button><button class="btn ${d ? "done" : ""}" id="done">${d ? "✓ 已完成" : `完成呢${b.mine ? "課" : "章"}`}</button><button class="btn primary" id="next" ${i === b.chapters.length - 1 ? "disabled" : ""}>下一${b.mine ? "課" : "章"} →</button></div>`;
 
 function lessonHtml(b, i) {
@@ -367,6 +372,8 @@ function chapterHtml(b, i) {
   const d = st.done[key(b, i)];
   return `<div class="ch">
     <div class="chhead"><div class="eyebrow">${esc(c.part || b.title)}</div><h2>${esc(c.num)}　${esc(c.title)}</h2>${c.oneLiner ? `<p class="one">${esc(c.oneLiner)}</p>` : ""}</div>
+    ${deepHtml(c)}
+    ${c.deep?.length ? `<div class="eyebrow" style="margin-top:8px">重溫：重點、數字同術語</div>` : ""}
     ${sec("要記嘅數字", c.numbers?.length ? `<div class="nums">${c.numbers.map((n) => `<div class="nb"><b>${esc(n.value)}</b><span>${esc(n.label)}</span>${n.asOf ? `<small>${esc(n.asOf)}</small>` : ""}</div>`).join("")}</div>` : "")}
     ${sec("圖解", c.visuals?.length ? `<div class="vis">${c.visuals.map(vis).join("")}</div>` : "")}
     ${sec("重點", c.keyPoints?.length ? `<ol class="kp">${c.keyPoints.map((k, j) => `<li data-i="${String(j + 1).padStart(2, "0")}">${esc(k)}</li>`).join("")}</ol>` : "")}
@@ -399,8 +406,8 @@ function renderRead() {
   $("#msel").onchange = (e) => go(+e.target.value);
   $("#prev").onclick = () => go(i - 1); $("#next").onclick = () => go(i + 1);
   $("#done").onclick = () => { st.done[key(b, i)] = !st.done[key(b, i)]; st.doneT[key(b, i)] = Date.now(); save(); renderBooks(); if (st.done[key(b, i)] && i < b.chapters.length - 1) go(i + 1); else renderRead(); };
-  $("#chap").addEventListener("click", (e) => { const t = e.target.closest(".term"); if (!t) return; const c = b.chapters[i].terms[+t.dataset.j]; const open = t.getAttribute("aria-expanded") !== "true";
-    $$(".term", $("#chap")).forEach((x) => x.setAttribute("aria-expanded", "false")); t.setAttribute("aria-expanded", String(open)); const d = $("#tdef"); d.hidden = !open; d.innerHTML = `<b>${esc(c.term)}</b>：${esc(c.def)}`; });
+  $("#chap").addEventListener("click", (e) => { const a = e.target.closest("a[data-d]"); if (a) { e.preventDefault(); $(`#dsec-${a.dataset.d}`)?.scrollIntoView({ behavior: "smooth", block: "start" }); return; } const t = e.target.closest(".term"); if (!t) return; const c = b.chapters[i].terms[+t.dataset.j]; const open = t.getAttribute("aria-expanded") !== "true";
+    $$(".term", $("#chap")).forEach((x) => x.setAttribute("aria-expanded", "false")); t.setAttribute("aria-expanded", String(open)); const d = $("#tdef"); d.hidden = !open; d.innerHTML = `<b>${esc(c.term)}</b>${c.en ? `（${esc(c.en)}）` : ""}：${esc(c.def)}`; });
   const ta = $("#note");
   if (ta) { let tm; const id = b.chapters[i].id;
     ta.oninput = () => { clearTimeout(tm); tm = setTimeout(() => { st.notes[id] = ta.value; st.notesT[id] = Date.now(); if (!ta.value) delete st.notes[id]; save(); $("#saved").textContent = "已儲存喺你部機"; }, 400); };
@@ -421,8 +428,14 @@ function renderCards() {
   if (!deck.length) { $("#sch-view").innerHTML = `<p class="empty">呢本未有術語。</p>`; return; }
   const t = deck[di];
   $("#sch-view").innerHTML = `<div class="fc"><p class="muted" style="text-align:center">${esc(b.title)} · ${di + 1} / ${deck.length} · 撳張卡反轉</p>
-    <button class="card3" id="card">${flip ? `<span class="def">${esc(t.def)}</span><small>${esc(t.c)}</small>` : `<span class="big">${esc(t.term)}</span><small>諗吓係乜意思</small>`}</button>
-    <div class="nav"><button class="btn" id="cp">← 上一張</button><button class="btn" id="cs">洗牌</button><button class="btn primary" id="cn">下一張 →</button></div></div>`;
+    <button class="card3" id="card">${flip ? `<span class="def"><b>${esc(t.term)}</b>${t.en ? `（${esc(t.en)}）` : ""}<br>${esc(t.def)}</span><small>${esc(t.c)}</small>` : `<span class="big">${esc(t.term)}</span>${t.en ? `<span class="en">${esc(t.en)}</span>` : ""}<small>諗吓係乜意思</small>`}</button>
+    <div class="nav"><button class="btn" id="cp">← 上一張</button><button class="btn" id="cs">洗牌</button><button class="btn primary" id="cn">下一張 →</button></div>
+    <details class="gloss"><summary>成本書嘅詞庫（${deck.length} 個，中英對照）</summary><input id="gq" placeholder="搵中文或者英文…" spellcheck="false"><div class="gl" id="gl"></div></details></div>`;
+  const all = b.chapters.flatMap((c, j) => (c.terms || []).map((t) => ({ ...t, c: `${c.num} ${c.title}`, j }))).sort((x, y) => (x.en || x.term).localeCompare(y.en || y.term));
+  const gl = (q) => { q = (q || "").toLowerCase(); $("#gl").innerHTML = all.filter((t) => !q || `${t.term} ${t.en || ""} ${t.def}`.toLowerCase().includes(q)).map((t) => `<div><b>${esc(t.term)}</b><i>${esc(t.en || "")}</i><span>${esc(t.def)}</span><button class="lnk" data-j="${t.j}">${esc(t.c)}</button></div>`).join("") || `<p class="empty">搵唔到。</p>`; };
+  $(".gloss").addEventListener("toggle", () => gl($("#gq").value), { once: true });
+  $("#gq").oninput = (e) => gl(e.target.value);
+  $("#gl").onclick = (e) => { const x = e.target.closest("button[data-j]"); if (!x) return; st.ch[b.key] = +x.dataset.j; st.mode = "read"; save(); srender(); window.scrollTo({ top: 0 }); };
   $("#card").onclick = () => { flip = !flip; renderCards(); };
   $("#cp").onclick = () => { di = (di - 1 + deck.length) % deck.length; flip = false; renderCards(); };
   $("#cn").onclick = () => { di = (di + 1) % deck.length; flip = false; renderCards(); };
@@ -452,7 +465,7 @@ const SIDX = [];
 LIB.forEach((b, bi) => b.chapters.forEach((c, j) => {
   const push = (kind, text) => text && SIDX.push({ bi, j, kind, text: String(text).replace(/\*\*/g, ""), c });
   push(b.mine ? "課" : "章", c.title); push("一句", c.oneLiner); (c.keyPoints || []).forEach((k) => push("重點", k)); (c.concept || []).forEach((k) => push("概念", k));
-  (c.terms || []).forEach((t) => push("術語", `${t.term}：${t.def}`)); (c.formulas || []).forEach((f) => push("公式", `${f.name}：${f.expr}`));
+  (c.terms || []).forEach((t) => push("術語", `${t.term}${t.en ? `（${t.en}）` : ""}：${t.def}`)); (c.deep || []).forEach((s) => s.p.forEach((x) => push("導讀", x))); (c.formulas || []).forEach((f) => push("公式", `${f.name}：${f.expr}`));
   (c.numbers || []).forEach((n) => push("數字", `${n.value} ${n.label}`)); (c.views || []).forEach((v) => push(v.who, v.summary)); (c.critique || []).forEach((k) => push("審視", k));
 }));
 function renderSSearch(q) {
